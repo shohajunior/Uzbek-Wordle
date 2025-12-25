@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Uzbek Wordle</title>
+<script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+<style>
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background: #121213;
+    color: #fff;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    min-height: 100vh;
+    margin: 0;
+    padding: 20px;
+    overflow-x: hidden;
+}
+h1 { margin-bottom: 20px; letter-spacing: 2px; }
+
+#grid { display: grid; grid-template-rows: repeat(6, 60px); grid-template-columns: repeat(5, 60px); gap: 5px; }
+.cell {
+    width: 60px; height: 60px; border: 2px solid #3a3a3c; display: flex;
+    justify-content: center; align-items: center; font-size: 32px; font-weight: bold;
+    text-transform: uppercase; transition: transform 0.3s;
+}
+.cell.flip { animation: flip 0.5s ease-in; }
+@keyframes flip { 0% { transform: rotateX(0); } 50% { transform: rotateX(90deg); } 100% { transform: rotateX(0); } }
+
+#keyboard { margin-top: 30px; display: flex; flex-direction: column; gap: 8px; align-items: center; }
+.kb-row { display: flex; gap: 6px; }
+.key {
+    background: #818384; color: white; min-width: 35px; height: 50px; padding: 0 10px;
+    display: flex; justify-content: center; align-items: center;
+    border-radius: 4px; cursor: pointer; user-select: none; font-weight: bold;
+}
+.key.wide { min-width: 65px; }
+.key.press { transform: scale(0.9); background: #565758; }
+
+#toast-container {
+    position: fixed; top: 20px; right: 20px;
+    display: flex; flex-direction: column; gap: 10px; z-index: 1000;
+}
+.toast {
+    background: #ffffff; color: #000; padding: 15px 25px;
+    border-radius: 5px; font-weight: bold; box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+    animation: slideIn 0.3s ease-out forwards;
+}
+@keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+</style>
+</head>
+<body>
+
+<h1>Uzbek Wordle</h1>
+<div id="grid"></div>
+<div id="keyboard"></div>
+<div id="toast-container"></div>
+
+<script>
+// ======= O'yin sozlamalari =======
+const words = ["BAHOR", "DUNYO", "KITOB", "OLMAK", "QALAM", "SAVOL", "YORUG", "ZAMON", "FIKIR", "HAYOT"];
+let answer = words[Math.floor(Math.random() * words.length)];
+let currentRow = 0, currentCol = 0;
+let gridData = Array.from({length:6},()=>Array(5).fill(''));
+let gameOver = false;
+
+const layout = [
+    "QWERTYUIOP".split(''),
+    "ASDFGHJKL".split(''),
+    ["ENTER", ..."ZXCVBNM".split(''), "DEL"]
+];
+
+// ======= Salut (Confetti) Funksiyasi =======
+function fireConfetti() {
+    const duration = 3 * 1000;
+    const end = Date.now() + duration;
+
+    (function frame() {
+        // Chap tomondan salut
+        confetti({
+            particleCount: 3,
+            angle: 60,
+            spread: 55,
+            origin: { x: 0, y: 0.6 },
+            colors: ['#6aaa64', '#c9b458', '#ffffff']
+        });
+        // O'ng tomondan salut
+        confetti({
+            particleCount: 3,
+            angle: 120,
+            spread: 55,
+            origin: { x: 1, y: 0.6 },
+            colors: ['#6aaa64', '#c9b458', '#ffffff']
+        });
+
+        if (Date.now() < end) {
+            requestAnimationFrame(frame);
+        }
+    }());
+}
+
+function showToast(message) {
+    const container = document.getElementById('toast-container');
+    const toast = document.createElement('div');
+    toast.className = 'toast';
+    toast.textContent = message;
+    container.appendChild(toast);
+    setTimeout(() => { toast.style.opacity = '0'; setTimeout(() => toast.remove(), 500); }, 3000);
+}
+
+function createGrid(){
+    const gridContainer = document.getElementById('grid');
+    for(let r=0;r<6;r++){
+        for(let c=0;c<5;c++){
+            const cell = document.createElement('div');
+            cell.classList.add('cell');
+            cell.id = `cell-${r}-${c}`;
+            gridContainer.appendChild(cell);
+        }
+    }
+}
+
+function createKeyboard(){
+    const kb = document.getElementById('keyboard');
+    layout.forEach(row => {
+        const rowDiv = document.createElement('div');
+        rowDiv.className = 'kb-row';
+        row.forEach(key => {
+            const button = document.createElement('div');
+            button.textContent = key;
+            button.classList.add('key');
+            if(key === 'ENTER' || key === 'DEL') button.classList.add('wide');
+            button.onclick = () => processInput(key);
+            rowDiv.appendChild(button);
+        });
+        kb.appendChild(rowDiv);
+    });
+}
+
+function processInput(key) {
+    if(gameOver) return;
+    if(key === 'DEL' || key === 'BACKSPACE') {
+        if(currentCol > 0) {
+            currentCol--;
+            gridData[currentRow][currentCol] = '';
+            updateGrid();
+        }
+    } else if(key === 'ENTER') {
+        checkGuess();
+    } else if(currentCol < 5 && /^[A-Z]$/.test(key)) {
+        gridData[currentRow][currentCol] = key;
+        updateGrid();
+        currentCol++;
+    }
+}
+
+function updateGrid(){
+    for(let r=0;r<6;r++){
+        for(let c=0;c<5;c++){
+            const cell = document.getElementById(`cell-${r}-${c}`);
+            cell.textContent = gridData[r][c];
+        }
+    }
+}
+
+function checkGuess(){
+    if(currentCol !== 5) { showToast("5 ta harf kiriting!"); return; }
+
+    const guess = gridData[currentRow].join('');
+    
+    for(let c=0; c<5; c++) {
+        const cell = document.getElementById(`cell-${currentRow}-${c}`);
+        const letter = guess[c];
+        
+        setTimeout(() => {
+            cell.classList.add('flip');
+            if(letter === answer[c]) {
+                cell.style.backgroundColor = '#6aaa64';
+                cell.style.borderColor = '#6aaa64';
+            } else if(answer.includes(letter)) {
+                cell.style.backgroundColor = '#c9b458';
+                cell.style.borderColor = '#c9b458';
+            } else {
+                cell.style.backgroundColor = '#3a3a3c';
+                cell.style.borderColor = '#3a3a3c';
+            }
+        }, c * 200);
+    }
+
+    setTimeout(() => {
+        if(guess === answer){ 
+            showToast("Ajoyib! Topdingiz! 🏆");
+            fireConfetti(); // G'alaba saluti
+            gameOver = true;
+        } else if(currentRow === 5) {
+            showToast("O'yin tugadi. Javob: " + answer);
+            gameOver = true;
+        }
+        currentRow++;
+        currentCol = 0;
+    }, 1200);
+}
+
+document.addEventListener('keydown', (e) => processInput(e.key.toUpperCase()));
+
+createGrid();
+createKeyboard();
+</script>
+
+</body>
+</html>
